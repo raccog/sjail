@@ -1,11 +1,20 @@
-/* Many parts of this proof-of-concept use the following example as a template:
- *
- * https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/samples/landlock/sandboxer.c
- *
- * Other information about landlock was found here:
+/* Information about landlocks can be found here:
  *
  * https://docs.kernel.org/userspace-api/landlock.html
 */
+
+/*
+ * Many parts of this proof-of-concept use the following example as a template:
+ *
+ * https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/samples/landlock/sandboxer.c
+ *
+ * Simple Landlock sandbox manager able to launch a process restricted by a
+ * user-defined filesystem access control policy.
+ *
+ * Copyright © 2017-2020 Mickaël Salaün <mic@digikod.net>
+ * Copyright © 2020 ANSSI
+ * Copyright © 2023 Ryan Cohen <rcohenprogramming@gmail.com>
+ */
 
 #define _GNU_SOURCE
 #include <errno.h>
