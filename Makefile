@@ -1,2 +1,6 @@
-hide_my_files: hide_my_files.c
+sjail: sjail.c
 	gcc $< -o $@
+
+.PHONY: clean
+clean:
+	rm sjail

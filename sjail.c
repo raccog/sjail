@@ -118,8 +118,11 @@ int apply_landlock_rule(const int ruleset_fd, const char* path, __u64 access) {
 }
 
 void usage() {
-    fprintf(stderr, "Usage: ./hide_my_files ALLOWED_FILES ... -c COMMAND [ARGS ...]");
-    fprintf(stderr, "Make sure that the '-c' flag is included before the sub-command");
+    fprintf(stderr, "SimpleJail v0.1.0\n");
+    fprintf(stderr, "Usage: sjail [OPTIONS] ALLOWED_FILES ... -c COMMAND [ARGS ...]\n");
+    fprintf(stderr, "  Make sure that the '-c' flag is included before the sub-command\n");
+    fprintf(stderr, "Options:\n");
+    fprintf(stderr, "  -v  Print debug statements\n");
 }
 
 int main(int argc, char* argv[], char* const* const envp) {
@@ -129,14 +132,19 @@ int main(int argc, char* argv[], char* const* const envp) {
     return 1;
   }
 
-  // Exit if there is no '-c' flag (excluding the last argument)
+  // Search for flags
   int command_flag_found = 0;
+  int verbose = 0;
   for (int i = 0; i < argc - 1; ++i) {
-    if (strncmp(argv[i], "-c", 2) == 0) {
+    if (command_flag_found == 0 && strncmp(argv[i], "-c", 2) == 0) {
       command_flag_found = 1;
-      break;
+    }
+    if (verbose == 0 && strncmp(argv[i], "-v", 2) == 0) {
+      verbose = i;
     }
   }
+
+  // Exit if there is no '-c' flag (excluding the last argument)
   if (command_flag_found == 0) {
     usage();
     return 1;
@@ -164,11 +172,12 @@ int main(int argc, char* argv[], char* const* const envp) {
           "or at boot time by setting the same content to the "
           "\"lsm\" kernel parameter.\n");
       break;
-    default:
-      return 1;
     }
+    return 1;
   }
-  printf("Landlock ABI version: %i\n", abi);
+  if (verbose) {
+    printf("Landlock ABI version: %i\n", abi);
+  }
 
   // Set up ruleset struct
   struct landlock_ruleset_attr ruleset_attr = {
@@ -186,20 +195,24 @@ int main(int argc, char* argv[], char* const* const envp) {
   case 2:
     /* Removes LANDLOCK_ACCESS_FS_TRUNCATE for ABI < 3 */
     ruleset_attr.handled_access_fs &= ~LANDLOCK_ACCESS_FS_TRUNCATE;
-    fprintf(stderr,
-      "Hint: You should update the running kernel "
-      "to leverage Landlock features "
-      "provided by ABI version %d (instead of %d).\n",
-      LANDLOCK_ABI_LAST, abi);
+    if (verbose) {
+      fprintf(stderr,
+        "Hint: You should update the running kernel "
+        "to leverage Landlock features "
+        "provided by ABI version %d (instead of %d).\n",
+        LANDLOCK_ABI_LAST, abi);
+    }
     __attribute__((fallthrough));
   case LANDLOCK_ABI_LAST:
     break;
   default:
-    fprintf(stderr,
-      "Hint: You should update this program "
-      "to leverage Landlock features "
-      "provided by ABI version %d (instead of %d).\n",
-      abi, LANDLOCK_ABI_LAST);
+    if (verbose) {
+      fprintf(stderr,
+        "Hint: You should update this program "
+        "to leverage Landlock features "
+        "provided by ABI version %d (instead of %d).\n",
+        abi, LANDLOCK_ABI_LAST);
+    }
   }
   rough_read &= ruleset_attr.handled_access_fs;
   rough_write &= ruleset_attr.handled_access_fs;
@@ -231,11 +244,15 @@ int main(int argc, char* argv[], char* const* const envp) {
       // Record where the sub-command starts
       sub_cmd_start = i + 1;
       break;
+    } else if (i == verbose) {
+      continue;
     }
 
     // Allow writes only to devices marked as allowed
     const char* path = argv[i];
-    printf("Allowing writes to %s\n", path);
+    if (verbose) {
+      printf("Allowing writes to %s\n", path);
+    }
     apply_landlock_rule(ruleset_fd, path, rough_write | rough_read);
   }
 
@@ -249,7 +266,9 @@ int main(int argc, char* argv[], char* const* const envp) {
 
   // Run the sub-command with the previous landlock restrictions applied
   const char* sub_cmd = argv[sub_cmd_start];
-  printf("Running %s\n", sub_cmd);
+  if (verbose) {
+    printf("Running %s\n", sub_cmd);
+  }
   execve(sub_cmd, &argv[sub_cmd_start], envp);
 
   // This shouldn't run if the sub-command ran properly
