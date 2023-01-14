@@ -15,6 +15,7 @@
 #include <string.h>
 #include <linux/landlock.h>
 #include <linux/prctl.h>
+#include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/prctl.h>
 #include <unistd.h>
@@ -70,15 +71,27 @@ static inline int landlock_restrict_self(const int ruleset_fd,
   LANDLOCK_ACCESS_FS_MAKE_SYM)
 
 int apply_landlock_rule(const int ruleset_fd, const char* path, __u64 access) {
-  struct landlock_path_beneath_attr beneath_attr = {
-    .allowed_access = access
-  };
+  struct landlock_path_beneath_attr beneath_attr;
 
   // Try to open file and apply landlock rule
   beneath_attr.parent_fd = open(path, O_PATH | O_CLOEXEC);
   if (beneath_attr.parent_fd < 0) {
     fprintf(stderr, "Failed to open file %s: %i\n", path, errno);
     return 1;
+  }
+
+  // Get file stat to determine what permissions to set
+  struct stat statbuf;
+  if (fstat(beneath_attr.parent_fd, &statbuf)) {
+    fprintf(stderr, "Failed to get stat for file %s: %i\n", path, errno);
+    close(beneath_attr.parent_fd);
+    return 1;
+  }
+
+  // Set permissions depending on whether it's a file or a directory
+  beneath_attr.allowed_access = access;
+  if (!S_ISDIR(statbuf.st_mode)) {
+    beneath_attr.allowed_access &= ACCESS_FILE;
   }
 
   // Add ruleset for this device file
@@ -147,7 +160,7 @@ int main(int argc, char* argv[], char* const* const envp) {
 
   // Create ruleset for landlock
   struct landlock_ruleset_attr ruleset_attr = {
-    .handled_access_fs = ACCESS_FS_ROUGHLY_WRITE | ACCESS_FS_ROUGHLY_READ
+    .handled_access_fs = ACCESS_FS_ROUGHLY_READ | ACCESS_FS_ROUGHLY_WRITE
   };
   int ruleset_fd = landlock_create_ruleset(&ruleset_attr, sizeof(ruleset_attr), 0);
   if (ruleset_fd < 0) {
@@ -164,7 +177,6 @@ int main(int argc, char* argv[], char* const* const envp) {
 
   // Restrict entire file system to read only
   if (apply_landlock_rule(ruleset_fd, "/", ACCESS_FS_ROUGHLY_READ) != 0) {
-    fprintf(stderr, "Failed to restrict file system to read-only permissions");
     close(ruleset_fd);
     return 1;
   }
@@ -181,7 +193,7 @@ int main(int argc, char* argv[], char* const* const envp) {
     // Allow writes only to devices marked as allowed
     const char* path = argv[i];
     printf("Allowing writes to %s\n", path);
-    apply_landlock_rule(ruleset_fd, path, ACCESS_FILE);
+    apply_landlock_rule(ruleset_fd, path, ACCESS_FS_ROUGHLY_WRITE | ACCESS_FS_ROUGHLY_READ);
   }
 
   // Restrict this thread to the landlock rules that were just created
