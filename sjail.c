@@ -133,19 +133,19 @@ int main(int argc, char* argv[], char* const* const envp) {
   }
 
   // Search for flags
-  int command_flag_found = 0;
+  int command_arg = 0;
   int verbose = 0;
-  for (int i = 0; i < argc - 1; ++i) {
-    if (command_flag_found == 0 && strncmp(argv[i], "-c", 2) == 0) {
-      command_flag_found = 1;
+  for (int i = 1; i < argc - 1; ++i) {
+    if (command_arg == 0 && strncmp(argv[i], "-c", 3) == 0) {
+      command_arg = i;
     }
-    if (verbose == 0 && strncmp(argv[i], "-v", 2) == 0) {
+    if (verbose == 0 && strncmp(argv[i], "-v", 3) == 0) {
       verbose = i;
     }
   }
 
   // Exit if there is no '-c' flag (excluding the last argument)
-  if (command_flag_found == 0) {
+  if (command_arg == 0) {
     usage();
     return 1;
   }
@@ -240,7 +240,7 @@ int main(int argc, char* argv[], char* const* const envp) {
   // Loop through each command line argument until the '-c' flag
   int sub_cmd_start = 0;
   for (int i = 1; i < argc - 1; ++i) {
-    if (strncmp(argv[i], "-c", 2) == 0) {
+    if (i == command_arg) {
       // Record where the sub-command starts
       sub_cmd_start = i + 1;
       break;
