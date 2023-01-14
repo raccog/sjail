@@ -48,6 +48,16 @@ static inline int landlock_restrict_self(const int ruleset_fd,
 }
 #endif
 
+#define LANDLOCK_ABI_LAST 3
+
+#ifndef LANDLOCK_ACCESS_FS_REFER
+#define LANDLOCK_ACCESS_FS_REFER      (1ULL << 13)
+#endif
+
+#ifndef LANDLOCK_ACCESS_FS_TRUNCATE
+#define LANDLOCK_ACCESS_FS_TRUNCATE   (1ULL << 14)
+#endif
+
 #define ACCESS_FILE ( \
   LANDLOCK_ACCESS_FS_EXECUTE | \
   LANDLOCK_ACCESS_FS_WRITE_FILE | \
@@ -68,7 +78,9 @@ static inline int landlock_restrict_self(const int ruleset_fd,
   LANDLOCK_ACCESS_FS_MAKE_SOCK | \
   LANDLOCK_ACCESS_FS_MAKE_FIFO | \
   LANDLOCK_ACCESS_FS_MAKE_BLOCK | \
-  LANDLOCK_ACCESS_FS_MAKE_SYM)
+  LANDLOCK_ACCESS_FS_MAKE_SYM | \
+  LANDLOCK_ACCESS_FS_REFER | \
+  LANDLOCK_ACCESS_FS_TRUNCATE)
 
 int apply_landlock_rule(const int ruleset_fd, const char* path, __u64 access) {
   struct landlock_path_beneath_attr beneath_attr;
@@ -158,10 +170,41 @@ int main(int argc, char* argv[], char* const* const envp) {
   }
   printf("Landlock ABI version: %i\n", abi);
 
-  // Create ruleset for landlock
+  // Set up ruleset struct
   struct landlock_ruleset_attr ruleset_attr = {
     .handled_access_fs = ACCESS_FS_ROUGHLY_READ | ACCESS_FS_ROUGHLY_WRITE
   };
+  int rough_read = ACCESS_FS_ROUGHLY_READ;
+  int rough_write = ACCESS_FS_ROUGHLY_WRITE;
+
+  // Disable features that are not supported
+  switch (abi) {
+  case 1:
+    /* Removes LANDLOCK_ACCESS_FS_REFER for ABI < 2 */
+    ruleset_attr.handled_access_fs &= ~LANDLOCK_ACCESS_FS_REFER;
+    __attribute__((fallthrough));
+  case 2:
+    /* Removes LANDLOCK_ACCESS_FS_TRUNCATE for ABI < 3 */
+    ruleset_attr.handled_access_fs &= ~LANDLOCK_ACCESS_FS_TRUNCATE;
+    fprintf(stderr,
+      "Hint: You should update the running kernel "
+      "to leverage Landlock features "
+      "provided by ABI version %d (instead of %d).\n",
+      LANDLOCK_ABI_LAST, abi);
+    __attribute__((fallthrough));
+  case LANDLOCK_ABI_LAST:
+    break;
+  default:
+    fprintf(stderr,
+      "Hint: You should update this program "
+      "to leverage Landlock features "
+      "provided by ABI version %d (instead of %d).\n",
+      abi, LANDLOCK_ABI_LAST);
+  }
+  rough_read &= ruleset_attr.handled_access_fs;
+  rough_write &= ruleset_attr.handled_access_fs;
+
+  // Create ruleset for landlock
   int ruleset_fd = landlock_create_ruleset(&ruleset_attr, sizeof(ruleset_attr), 0);
   if (ruleset_fd < 0) {
     perror("Failed to create a ruleset");
@@ -176,7 +219,7 @@ int main(int argc, char* argv[], char* const* const envp) {
   }
 
   // Restrict entire file system to read only
-  if (apply_landlock_rule(ruleset_fd, "/", ACCESS_FS_ROUGHLY_READ) != 0) {
+  if (apply_landlock_rule(ruleset_fd, "/", rough_read) != 0) {
     close(ruleset_fd);
     return 1;
   }
@@ -193,7 +236,7 @@ int main(int argc, char* argv[], char* const* const envp) {
     // Allow writes only to devices marked as allowed
     const char* path = argv[i];
     printf("Allowing writes to %s\n", path);
-    apply_landlock_rule(ruleset_fd, path, ACCESS_FS_ROUGHLY_WRITE | ACCESS_FS_ROUGHLY_READ);
+    apply_landlock_rule(ruleset_fd, path, rough_write | rough_read);
   }
 
   // Restrict this thread to the landlock rules that were just created
