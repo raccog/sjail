@@ -4,7 +4,7 @@ NOTE: Don't rely on this tool for security purposes; it is only a proof of conce
 
 A command line tool that runs another executable, while only allowing writes to a user-specified list of directories and files.
 
-ANOTHER NOTE: This tool relies on the landlock feature introduced in Linux version 5.13. Some file-related syscalls may not be currently restricted, yet (such as stat(2)). Check <https://landlock.io/> for more details.
+ANOTHER NOTE: This tool relies on the landlock feature introduced in Linux version 5.13. Some file-related syscalls may not be currently restricted, yet (such as stat(2)). Executables that run with special permissions (such as `fusermount`) will not work either becuase of the privilege restrictions set by `prctl`. Check <https://landlock.io/> for more details.
 
 ## Purpose
 
